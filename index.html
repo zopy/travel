@@ -28,6 +28,7 @@ input[type=color]{width:34px;height:30px;padding:0;border:1px solid var(--bd);bo
 svg{width:100%;height:auto;display:block}
 svg path{stroke:var(--stroke);stroke-width:1;cursor:pointer;transition:fill .15s}
 svg path:hover{filter:brightness(1.12);stroke-width:2}
+.chip{display:flex;align-items:center;gap:6px;border:1px solid var(--bd);border-radius:999px;padding:4px 10px;cursor:pointer;font-size:14px}
 .mut{color:var(--mut);font-size:13px}
 svg .lab{font-weight:600;text-anchor:middle;dominant-baseline:central;fill:var(--tx);stroke:var(--bg);stroke-width:2.5px;paint-order:stroke;pointer-events:none;user-select:none;cursor:default}
 #tip{position:fixed;pointer-events:none;background:#111c;color:#fff;padding:6px 10px;border-radius:8px;font-size:13px;display:none;max-width:240px;z-index:9}
@@ -50,6 +51,7 @@ svg .lab{font-weight:600;text-anchor:middle;dominant-baseline:central;fill:var(-
     <button id="modeRes">Sonuç</button>
   </div>
   <div class="row" id="editBar" style="margin-top:10px"></div>
+  <div class="row" id="selBar" style="margin-top:10px;display:none"></div>
 </div>
 <div class="card">
   <div id="mapWrap"></div>
@@ -87,6 +89,7 @@ function setLabels(){document.querySelectorAll("#mapWrap .lab").forEach(t=>{
   t.style.display="";
   if(labMode==="auto"&&n.length*5.6<=bw*0.9&&bh>=11){txt=n;f=9}else{txt=AB[c];f=bw>=18?8:6.5}
   t.textContent=txt;t.style.fontSize=f+"px"})}
+const off=new Set();const vp=()=>S.people.filter(p=>!off.has(p.id));
 const uid=()=>"p"+Math.random().toString(36).slice(2,9);
 
 function load(){try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r);if(valid(d))S=d}}catch(e){}
@@ -99,14 +102,14 @@ const cur=()=>S.people.find(p=>p.id===active)||S.people[0];
 
 function shade(n,total){ // 2+ kişi: koyulaşan mor-mavi skala
   const t=total<=2?1:(n-2)/(total-2);const l=72-t*38;return `hsl(262 70% ${l}%)`}
-function whoVisited(code){return S.people.filter(p=>p.cities.includes(code))}
+function whoVisited(code){return(mode==="res"?vp():S.people).filter(p=>p.cities.includes(code))}
 function colorOf(code){
   const w=whoVisited(code);
   if(mode==="edit"){return cur().cities.includes(code)?cur().color:"var(--empty)"}
   if(!w.length)return"var(--empty)";
   if(w.length===1)return w[0].color;
-  if(S.people.length>2&&w.length===S.people.length)return"#e0a800";
-  return shade(w.length,S.people.length)}
+  if(vp().length>2&&w.length===vp().length)return"#e0a800";
+  return shade(w.length,vp().length)}
 
 function drawMap(){
   const w=$("mapWrap");
@@ -140,23 +143,27 @@ function render(){
     $("clr").onclick=()=>{if(confirm("Bu kişinin tüm illeri temizlensin mi?")){p.cities=[];save();render()}};
     $("del").onclick=()=>{if(S.people.length<2){alert("En az bir kişi olmalı.");return}
       if(confirm(p.name+" silinsin mi?")){S.people=S.people.filter(x=>x!==p);active=S.people[0].id;save();render()}}}
+  const sb=$("selBar");sb.style.display=mode==="res"?"flex":"none";
+  if(mode==="res"){sb.innerHTML=`<span class="mut">Sonuçta gösterilecek kişiler:</span>`+S.people.map(p=>`<label class="chip"><input type="checkbox" data-id="${p.id}" ${off.has(p.id)?"":"checked"}><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</label>`).join("")+`<button id="sAll">Tümü</button><button id="sNone">Hiçbiri</button>`;
+    sb.querySelectorAll("input").forEach(i=>i.onchange=()=>{i.checked?off.delete(i.dataset.id):off.add(i.dataset.id);render()});
+    $("sAll").onclick=()=>{off.clear();render()};$("sNone").onclick=()=>{S.people.forEach(p=>off.add(p.id));render()}}
   drawMap();legend();stats()}
 
 function legend(){
-  const n=S.people.length,L=$("legend");
+  const n=vp().length,L=$("legend");
   if(mode==="edit"){L.innerHTML=`<span><i class="dot" style="background:${cur().color}"></i>${esc(cur().name)} gitti</span><span><i class="dot" style="background:var(--empty)"></i>Gitmedi</span>`;return}
   let h=`<span><i class="dot" style="background:var(--empty)"></i>Kimse gitmedi</span>`;
-  S.people.forEach(p=>h+=`<span><i class="dot" style="background:${p.color}"></i>Sadece ${esc(p.name)}</span>`);
+  vp().forEach(p=>h+=`<span><i class="dot" style="background:${p.color}"></i>Sadece ${esc(p.name)}</span>`);
   for(let k=2;k<=n;k++){if(k===n&&n>2)h+=`<span><i class="dot" style="background:#e0a800"></i>Herkes (${n})</span>`;else h+=`<span><i class="dot" style="background:${shade(k,n)}"></i>${k} kişi ortak</span>`}
   L.innerHTML=h}
 
 function stats(){
-  const all=Object.keys(byCode);
+  const all=Object.keys(byCode),P=mode==="res"?vp():S.people;
   const common=all.filter(c=>whoVisited(c).length>=2).length;
-  const every=S.people.length>1?all.filter(c=>whoVisited(c).length===S.people.length).length:0;
-  let h=S.people.map(p=>`<div><span class="dot" style="background:${p.color}"></span> <b>${esc(p.name)}</b>: ${p.cities.length} il</div>`).join("");
+  const every=P.length>1?all.filter(c=>whoVisited(c).length===P.length).length:0;
+  let h=P.map(p=>`<div><span class="dot" style="background:${p.color}"></span> <b>${esc(p.name)}</b>: ${p.cities.length} il</div>`).join("");
   h+=`<div>Ortak (2+ kişi): <b>${common}</b> il</div>`;
-  if(S.people.length>1)h+=`<div>Herkesin gittiği: <b>${every}</b> il</div>`;
+  if(P.length>1)h+=`<div>Herkesin gittiği: <b>${every}</b> il</div>`;
   h+=`<div>Hiç gidilmeyen: <b>${all.filter(c=>!whoVisited(c).length).length}</b> il</div>`;
   $("stats").innerHTML=h}
 
@@ -181,7 +188,7 @@ function askImport(){const b=$("impBar");b.style.display="flex";
   $("iAdd").onclick=()=>doImport(true);$("iRep").onclick=()=>doImport(false);$("iNo").onclick=()=>{pend=null;b.style.display="none"}}
 function doImport(merge){
   if(!pend)return;let added=0,merged=0;
-  if(!merge){S=pend;active=S.people[0].id;added=S.people.length}
+  if(!merge){off.clear();S=pend;active=S.people[0].id;added=S.people.length}
   else pend.people.forEach(p=>{const ex=S.people.find(x=>x.name.toLowerCase()===p.name.toLowerCase());
     if(ex){ex.cities=[...new Set([...ex.cities,...p.cities])];merged++}
     else{p.id=uid();if(S.people.some(x=>x.color.toLowerCase()===p.color.toLowerCase()))p.color=PAL.find(c=>!S.people.some(x=>x.color.toLowerCase()===c))||p.color;S.people.push(p);added++}});
